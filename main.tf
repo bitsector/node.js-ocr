@@ -366,7 +366,7 @@ resource "aws_elastic_beanstalk_application" "main" {
 resource "aws_elastic_beanstalk_environment" "main" {
   name                = var.environment
   application         = aws_elastic_beanstalk_application.main.name
-  solution_stack_name = "64bit Amazon Linux 2023 v6.6.1 running Node.js 18"
+  solution_stack_name = "64bit Amazon Linux 2023 v6.6.1 running Node.js 22"
 
   setting {
     namespace = "aws:ec2:vpc"

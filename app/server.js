@@ -3,6 +3,7 @@ const multer = require('multer');
 const Tesseract = require('tesseract.js');
 const cors = require('cors');
 const path = require('path');
+const { promises: fs } = require('fs');
 
 const app = express();
 
@@ -13,6 +14,16 @@ const port = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Performance monitoring middleware (Node.js 22 optimized)
+app.use((req, res, next) => {
+  const start = performance.now();
+  res.on('finish', () => {
+    const duration = performance.now() - start;
+    console.log(`${req.method} ${req.path} - ${res.statusCode} (${duration.toFixed(2)}ms)`);
+  });
+  next();
+});
 
 // Serve static files (for test page)
 app.use('/static', express.static(path.join(__dirname, 'public')));
@@ -57,7 +68,8 @@ const upload = multer({
 app.get('/', (req, res) => {
   res.json({
     message: 'AWS Beanstalk OCR API is running!',
-    version: '1.0.0',
+    version: '2.0.0',
+    nodeVersion: process.version,
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     testPage: '/static/index.html',
@@ -76,6 +88,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'healthy',
     uptime: process.uptime(),
+    nodeVersion: process.version,
     timestamp: new Date().toISOString()
   });
 });
@@ -106,26 +119,27 @@ app.post('/ocr', upload.single('image'), async (req, res) => {
       }
     );
 
-    // Clean up the uploaded file
-    const fs = require('fs');
-    fs.unlinkSync(req.file.path);
+    // Clean up the uploaded file using promises
+    await fs.unlink(req.file.path).catch(err => 
+      console.error('File cleanup error:', err)
+    );
 
     res.json({
       success: true,
       filename: req.file.originalname,
       extractedText: text.trim(),
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      nodeVersion: process.version
     });
 
   } catch (error) {
     console.error(`OCR Error for ${req.file?.originalname || 'unknown file'}:`, error.message);
     console.error('Full error:', error);
     
-    // Clean up file if it exists
-    if (req.file && req.file.path) {
+    // Clean up file if it exists using promises
+    if (req.file?.path) {
       try {
-        const fs = require('fs');
-        fs.unlinkSync(req.file.path);
+        await fs.unlink(req.file.path);
         console.log(`Cleaned up file: ${req.file.path}`);
       } catch (cleanupError) {
         console.error('Cleanup error:', cleanupError);
@@ -145,7 +159,8 @@ app.post('/ocr', upload.single('image'), async (req, res) => {
 app.get('/api', (req, res) => {
   res.json({
     name: 'AWS Beanstalk OCR API',
-    version: '1.0.0',
+    version: '2.0.0',
+    nodeVersion: process.version,
     endpoints: {
       'GET /': 'API status and info',
       'GET /health': 'Health check',
@@ -158,7 +173,7 @@ app.get('/api', (req, res) => {
         url: '/ocr',
         contentType: 'multipart/form-data',
         body: 'image file in "image" field',
-        supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff']
+        supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp']
       }
     }
   });
@@ -192,15 +207,41 @@ app.use('*', (req, res) => {
 });
 
 // Start server
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`🚀 OCR API Server running on port ${port}`);
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔧 Node.js version: ${process.version}`);
   console.log(`⏰ Started at: ${new Date().toISOString()}`);
   console.log(`🔗 Available endpoints:`);
   console.log(`   GET  / - API info`);
   console.log(`   GET  /health - Health check`);
   console.log(`   GET  /api - API documentation`);
   console.log(`   POST /ocr - OCR processing`);
+});
+
+// Graceful shutdown handling (Node.js best practices)
+process.on('SIGTERM', () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully');
+  server.close((err) => {
+    if (err) {
+      console.error('❌ Error during server close:', err);
+      process.exit(1);
+    }
+    console.log('✅ Server closed successfully');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('🛑 SIGINT received, shutting down gracefully');
+  server.close((err) => {
+    if (err) {
+      console.error('❌ Error during server close:', err);
+      process.exit(1);
+    }
+    console.log('✅ Server closed successfully');
+    process.exit(0);
+  });
 });
 
 module.exports = app;

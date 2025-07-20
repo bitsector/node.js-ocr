@@ -1,15 +1,22 @@
 # AWS Security Review Practice Environment
 
-This Terraform configuration creates a complete AWS infrastructure for practicing security reviews, matching your client's technology stack.
+This Terraform configuration creates a complete AWS infrastructure for practicing security reviews, featuring a modern Node.js 22 application stack.
 
 ## 🏗️ Architecture
 
 - **VPC**: Custom VPC with public/private subnets across 2 AZs
-- **Elastic Beanstalk**: Node.js 18 application environment
+- **Elastic Beanstalk**: Node.js 22 application environment (Latest LTS)
 - **Aurora MySQL**: Database cluster in private subnets
 - **Redis**: ElastiCache cluster for caching
 - **Security Groups**: Tiered network access controls
 - **IAM Roles**: Proper service permissions
+
+## 🆕 Updated Features
+
+- **Node.js 22**: Latest LTS version with improved performance
+- **Modern Platform**: Amazon Linux 2023 with latest security updates
+- **Enhanced Monitoring**: Built-in performance tracking
+- **Graceful Deployment**: Better error handling and shutdown procedures
 
 ## 🚀 Quick Start
 

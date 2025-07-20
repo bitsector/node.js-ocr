@@ -1,6 +1,15 @@
-# AWS Beanstalk OCR API
+# AWS Beanstalk OCR API v2.0
 
-A Node.js Express API for Optical Character Recognition (OCR) deployed on AWS Elastic Beanstalk.
+A modern Node.js OCR API built for AWS Elastic Beanstalk using Node.js 22+ with Tesseract.js.
+
+## 🆕 What's New in v2.0
+
+- **Updated to Node.js 22**: Latest LTS version with improved performance
+- **Modern JavaScript**: Uses ES2023+ features and best practices
+- **Enhanced Error Handling**: Graceful shutdown and better error management
+- **Performance Monitoring**: Built-in request timing and monitoring
+- **Async File Operations**: Uses Node.js promises for file operations
+- **Updated Dependencies**: Latest versions of all dependencies
 
 ## Features
 
