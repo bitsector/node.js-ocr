@@ -22,13 +22,13 @@ variable "aws_region" {
 variable "app_name" {
   description = "Application name"
   type        = string
-  default     = "security-review-app"
+  default     = "aws-beanstalk-sandbox"
 }
 
 variable "environment" {
   description = "Environment name"
   type        = string
-  default     = "security-review-env"
+  default     = "aws-beanstalk-sandbox-env"
 }
 
 variable "vpc_cidr" {
@@ -355,7 +355,7 @@ resource "aws_iam_instance_profile" "eb_instance_profile" {
 # Elastic Beanstalk Application
 resource "aws_elastic_beanstalk_application" "main" {
   name        = var.app_name
-  description = "Security review practice application"
+  description = "AWS Beanstalk sandbox application for testing deployments"
 
   tags = {
     Name = var.app_name
