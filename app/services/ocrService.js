@@ -14,6 +14,10 @@ async function ocr(file) {
   try {
     console.log(`Processing OCR for file: ${file.originalname} (${file.mimetype})`);
     
+    // Start timing the OCR operation specifically
+    const ocrStartTime = performance.now();
+    console.log(`🔍 Starting Tesseract OCR processing for ${file.originalname}...`);
+    
     // Perform OCR using Tesseract.js with local traineddata
     const { data: { text } } = await Tesseract.recognize(
       file.path,
@@ -30,8 +34,18 @@ async function ocr(file) {
       }
     );
 
-    const processingTime = performance.now() - startTime;
+    // End timing the OCR operation
+    const ocrEndTime = performance.now();
+    const ocrProcessingTime = ocrEndTime - ocrStartTime;
+    console.log(`✅ Tesseract OCR completed for ${file.originalname} in ${ocrProcessingTime.toFixed(2)}ms`);
+
+    const totalProcessingTime = performance.now() - startTime;
     const extractedText = text.trim();
+
+    console.log(`📊 OCR Results for ${file.originalname}:`);
+    console.log(`   📝 Extracted text length: ${extractedText.length} characters`);
+    console.log(`   ⏱️ Pure OCR time: ${ocrProcessingTime.toFixed(2)}ms`);
+    console.log(`   ⏱️ Total processing time: ${totalProcessingTime.toFixed(2)}ms`);
 
     // Log OCR request to database (async operation)
     await write_ocr(
@@ -39,7 +53,7 @@ async function ocr(file) {
       extractedText,
       file.size,
       file.mimetype,
-      processingTime
+      ocrProcessingTime  // Log the pure OCR time, not total processing time
     );
 
     // Clean up the uploaded file
@@ -47,14 +61,15 @@ async function ocr(file) {
       console.error('File cleanup error:', err)
     );
 
-    // Return OCR processing result
+    // Return OCR processing result with detailed timing
     return {
       success: true,
       filename: file.originalname,
       extractedText,
       timestamp: new Date().toISOString(),
       nodeVersion: process.version,
-      processingTimeMs: Math.round(processingTime),
+      processingTimeMs: Math.round(totalProcessingTime),
+      ocrTimeMs: Math.round(ocrProcessingTime),  // New: Pure OCR time
       fileSize: file.size,
       mimeType: file.mimetype
     };

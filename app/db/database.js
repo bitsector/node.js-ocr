@@ -71,9 +71,9 @@ async function initializeDatabase() {
  * @param {string} extractedText - OCR extracted text
  * @param {number} fileSize - File size in bytes
  * @param {string} mimeType - MIME type of the file
- * @param {number} processingTime - Processing time in milliseconds
+ * @param {number} ocrProcessingTime - Pure OCR processing time in milliseconds (Tesseract only)
  */
-async function write_ocr(imageName, extractedText, fileSize, mimeType, processingTime) {
+async function write_ocr(imageName, extractedText, fileSize, mimeType, ocrProcessingTime) {
   if (!dbPool) {
     console.warn('⚠️ No database connection - skipping OCR log');
     return;
@@ -90,10 +90,10 @@ async function write_ocr(imageName, extractedText, fileSize, mimeType, processin
       extractedText,
       fileSize,
       mimeType,
-      processingTime
+      ocrProcessingTime  // This is now pure OCR time, not total processing time
     ]);
     
-    console.log(`📝 OCR request logged: ${imageName}`);
+    console.log(`📝 OCR request logged: ${imageName} (OCR time: ${ocrProcessingTime.toFixed(2)}ms)`);
   } catch (error) {
     console.error('❌ Failed to log OCR request:', error.message);
     throw error;

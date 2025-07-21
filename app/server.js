@@ -81,9 +81,8 @@ app.get('/', (req, res) => {
     endpoints: {
       'GET /': 'API status',
       'GET /health': 'Health check',
-      'GET /api': 'API documentation',
       'POST /ocr': 'OCR processing',
-      'GET /logs': 'View OCR logs',
+      'GET /logs': 'View OCR logs (development only)',
       'GET /static/index.html': 'Test page'
     }
   });
@@ -102,33 +101,10 @@ app.get('/health', (req, res) => {
 // OCR endpoint - uses the new 3-layer architecture
 app.post('/ocr', upload.single('image'), ocrHandler);
 
-// API info endpoint
-app.get('/api', (req, res) => {
-  res.json({
-    name: 'AWS Beanstalk OCR API',
-    version: '2.0.0',
-    nodeVersion: process.version,
-    endpoints: {
-      'GET /': 'API status and info',
-      'GET /health': 'Health check',
-      'GET /api': 'API documentation',
-      'POST /ocr': 'Upload image for OCR processing (multipart/form-data with "image" field)',
-      'GET /logs': 'View recent OCR processing logs'
-    },
-    usage: {
-      ocr: {
-        method: 'POST',
-        url: '/ocr',
-        contentType: 'multipart/form-data',
-        body: 'image file in "image" field',
-        supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp']
-      }
-    },
-    database: getDatabaseInfo()
-  });
-});
-
 // OCR logs endpoint - uses the new 3-layer architecture
+// TODO: SECURITY - Remove or secure this endpoint before production deployment
+// This endpoint exposes internal application data and should only be used during development
+// Consider: authentication, rate limiting, or complete removal for production
 app.get('/logs', logsHandler);
 
 // Error handling middleware
@@ -154,7 +130,7 @@ app.use('*', (req, res) => {
   res.status(404).json({
     error: 'Not found',
     message: `Route ${req.originalUrl} not found`,
-    availableRoutes: ['/', '/health', '/api', 'POST /ocr', '/logs']
+    availableRoutes: ['/', '/health', 'POST /ocr', '/logs']
   });
 });
 
@@ -167,8 +143,9 @@ const server = app.listen(port, () => {
   console.log('🔗 Available endpoints:');
   console.log('   GET  / - API info');
   console.log('   GET  /health - Health check');
-  console.log('   GET  /api - API documentation');
   console.log('   POST /ocr - OCR processing');
+  console.log('   GET  /logs - View logs (development only)');
+  console.log('   GET  /static/index.html - Test page');
 });
 
 // Graceful shutdown handling (Node.js best practices)

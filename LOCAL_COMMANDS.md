@@ -73,9 +73,10 @@ curl -X GET http://localhost:8080/
 curl -X GET http://localhost:8080/health
 ```
 
-### Test API Documentation:
+**Test API Documentation:**
 ```bash
-curl -X GET http://localhost:8080/api
+# This endpoint has been removed for security reasons
+# curl -X GET http://localhost:8080/api
 ```
 
 ### Test OCR Processing (single file):
