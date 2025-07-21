@@ -1,105 +1,15 @@
 const express = require('express');
 const multer = require('multer');
-const Tesseract = require('tesseract.js');
 const cors = require('cors');
 const path = require('path');
-const { promises: fs } = require('fs');
-const mysql = require('mysql2/promise');
+const { initializeDatabase, getDatabaseInfo, closeDatabasePool } = require('./db/database');
+const { ocrHandler } = require('./api/ocrApi');
+const { logsHandler } = require('./api/logsApi');
 
 const app = express();
 
 // IMPORTANT: Use process.env.PORT for Elastic Beanstalk
 const port = process.env.PORT || 8080;
-
-// Database configuration
-const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USERNAME || 'admin',
-  password: process.env.DB_PASSWORD || 'TempPassword123!',
-  database: process.env.DB_NAME || 'securityreviewdb',
-  connectionLimit: 10,
-  acquireTimeout: 30000,
-  timeout: 30000,
-  reconnect: true,
-  charset: 'utf8mb4'
-};
-
-// Database connection pool
-let dbPool = null;
-
-// Initialize database connection and create table if needed
-async function initializeDatabase() {
-  try {
-    console.log('🔗 Connecting to MySQL database...');
-    console.log(`📍 Host: ${dbConfig.host}`);
-    console.log(`📍 Database: ${dbConfig.database}`);
-    
-    dbPool = mysql.createPool(dbConfig);
-    
-    // Test connection
-    const connection = await dbPool.getConnection();
-    console.log('✅ Database connection established');
-    
-    // Create OCR logs table if it doesn't exist
-    const createTableQuery = `
-      CREATE TABLE IF NOT EXISTS ocr_logs (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        image_name VARCHAR(255) NOT NULL,
-        extracted_text LONGTEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        file_size INT,
-        mime_type VARCHAR(100),
-        processing_time_ms FLOAT,
-        INDEX idx_created_at (created_at),
-        INDEX idx_image_name (image_name)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-    `;
-    
-    await connection.execute(createTableQuery);
-    console.log('✅ OCR logs table created/verified');
-    
-    connection.release();
-  } catch (error) {
-    console.error('❌ Database initialization failed:', error.message);
-    console.error('🔧 Running without database logging...');
-    // Clear the pool if connection failed
-    if (dbPool) {
-      try {
-        await dbPool.end();
-      } catch (e) {
-        // Ignore cleanup errors
-      }
-      dbPool = null;
-    }
-  }
-}
-
-// Function to log OCR request to database
-async function logOCRRequest(imageName, extractedText, fileSize, mimeType, processingTime) {
-  if (!dbPool) {
-    console.warn('⚠️ No database connection - skipping log');
-    return;
-  }
-
-  try {
-    const query = `
-      INSERT INTO ocr_logs (image_name, extracted_text, file_size, mime_type, processing_time_ms)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-    
-    await dbPool.execute(query, [
-      imageName,
-      extractedText,
-      fileSize,
-      mimeType,
-      processingTime
-    ]);
-    
-    console.log(`📝 OCR request logged: ${imageName}`);
-  } catch (error) {
-    console.error('❌ Failed to log OCR request:', error.message);
-  }
-}
 
 // Initialize database on startup
 initializeDatabase();
@@ -167,11 +77,7 @@ app.get('/', (req, res) => {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     testPage: '/static/index.html',
-    database: {
-      connected: dbPool !== null,
-      host: process.env.DB_HOST || 'localhost',
-      database: process.env.DB_NAME || 'securityreviewdb'
-    },
+    database: getDatabaseInfo(),
     endpoints: {
       'GET /': 'API status',
       'GET /health': 'Health check',
@@ -193,86 +99,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// OCR endpoint
-app.post('/ocr', upload.single('image'), async (req, res) => {
-  const startTime = performance.now();
-  
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        error: 'No image file uploaded',
-        message: 'Please upload an image file'
-      });
-    }
-
-    console.log(`Processing OCR for file: ${req.file.originalname} (${req.file.mimetype})`);
-    
-    // Perform OCR using Tesseract.js with local traineddata
-    const { data: { text } } = await Tesseract.recognize(
-      req.file.path,
-      'eng',
-      {
-        langPath: path.join(__dirname),  // Use local eng.traineddata file
-        gzip: false,  // Don't expect compressed files
-        logger: m => {
-          // Only log progress, not all the verbose messages
-          if (m.status && (m.status.includes('recognizing') || m.status.includes('loading'))) {
-            console.log(`${req.file.originalname}: ${m.status} - ${Math.round(m.progress * 100)}%`);
-          }
-        }
-      }
-    );
-
-    const processingTime = performance.now() - startTime;
-    const extractedText = text.trim();
-
-    // Log OCR request to database
-    await logOCRRequest(
-      req.file.originalname,
-      extractedText,
-      req.file.size,
-      req.file.mimetype,
-      processingTime
-    );
-
-    // Clean up the uploaded file using promises
-    await fs.unlink(req.file.path).catch(err => 
-      console.error('File cleanup error:', err)
-    );
-
-    res.json({
-      success: true,
-      filename: req.file.originalname,
-      extractedText,
-      timestamp: new Date().toISOString(),
-      nodeVersion: process.version,
-      processingTimeMs: Math.round(processingTime),
-      fileSize: req.file.size,
-      mimeType: req.file.mimetype
-    });
-
-  } catch (error) {
-    console.error(`OCR Error for ${req.file?.originalname || 'unknown file'}:`, error.message);
-    console.error('Full error:', error);
-    
-    // Clean up file if it exists using promises
-    if (req.file?.path) {
-      try {
-        await fs.unlink(req.file.path);
-        console.log(`Cleaned up file: ${req.file.path}`);
-      } catch (cleanupError) {
-        console.error('Cleanup error:', cleanupError);
-      }
-    }
-
-    res.status(500).json({
-      error: 'OCR processing failed',
-      message: error.message,
-      filename: req.file?.originalname || 'unknown',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
+// OCR endpoint - uses the new 3-layer architecture
+app.post('/ocr', upload.single('image'), ocrHandler);
 
 // API info endpoint
 app.get('/api', (req, res) => {
@@ -296,64 +124,12 @@ app.get('/api', (req, res) => {
         supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp']
       }
     },
-    database: {
-      connected: dbPool !== null,
-      host: process.env.DB_HOST || 'localhost',
-      database: process.env.DB_NAME || 'securityreviewdb'
-    }
+    database: getDatabaseInfo()
   });
 });
 
-// OCR logs endpoint
-app.get('/logs', async (req, res) => {
-  if (!dbPool) {
-    return res.status(503).json({
-      error: 'Database not available',
-      message: 'Database logging is not enabled'
-    });
-  }
-
-  try {
-    const limit = Math.min(parseInt(req.query.limit) || 10, 50); // Default 10, max 50
-    
-    // Simple query without parameterization to avoid MySQL issues
-    const query = `
-      SELECT 
-        id,
-        image_name,
-        LEFT(extracted_text, 200) as extracted_text_preview,
-        CHAR_LENGTH(extracted_text) as text_length,
-        created_at,
-        file_size,
-        mime_type,
-        processing_time_ms
-      FROM ocr_logs 
-      ORDER BY created_at DESC 
-      LIMIT ${limit}
-    `;
-    
-    const [rows] = await dbPool.execute(query);
-    
-    // Get total count with a simple query
-    const [countResult] = await dbPool.execute('SELECT COUNT(*) as total FROM ocr_logs');
-    const total = countResult[0].total;
-    
-    res.json({
-      success: true,
-      data: rows,
-      total,
-      limit,
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('Failed to fetch OCR logs:', error);
-    res.status(500).json({
-      error: 'Failed to fetch logs',
-      message: error.message
-    });
-  }
-});
+// OCR logs endpoint - uses the new 3-layer architecture
+app.get('/logs', logsHandler);
 
 // Error handling middleware
 app.use((error, req, res, _next) => {
@@ -399,14 +175,11 @@ const server = app.listen(port, () => {
 process.on('SIGTERM', async () => {
   console.log('🛑 SIGTERM received, shutting down gracefully');
   
-  // Close database pool
-  if (dbPool) {
-    try {
-      await dbPool.end();
-      console.log('✅ Database pool closed');
-    } catch (err) {
-      console.error('❌ Error closing database pool:', err);
-    }
+  // Close database pool using the db layer function
+  try {
+    await closeDatabasePool();
+  } catch (err) {
+    console.error('❌ Error closing database pool:', err);
   }
   
   server.close((err) => {
@@ -422,14 +195,11 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   console.log('🛑 SIGINT received, shutting down gracefully');
   
-  // Close database pool
-  if (dbPool) {
-    try {
-      await dbPool.end();
-      console.log('✅ Database pool closed');
-    } catch (err) {
-      console.error('❌ Error closing database pool:', err);
-    }
+  // Close database pool using the db layer function
+  try {
+    await closeDatabasePool();
+  } catch (err) {
+    console.error('❌ Error closing database pool:', err);
   }
   
   server.close((err) => {
