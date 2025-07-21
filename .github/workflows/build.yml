@@ -1,0 +1,49 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+          
+      - name: Install dependencies
+        working-directory: ./app
+        run: npm ci
+        
+      - name: Create deployment package
+        working-directory: ./app
+        run: |
+          zip -r ../deployment-build.zip . \
+            -x "node_modules/*" \
+            -x "uploads/*" \
+            -x "*.log" \
+            -x "check-node22.js" \
+            -x "app-deployment.zip"
+            
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: deployment-build.zip
+          retention-days: 7
+          
+      - name: Verify package contents
+        run: |
+          echo "Deployment package contents:"
+          unzip -l deployment-build.zip

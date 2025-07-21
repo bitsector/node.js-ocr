@@ -1,0 +1,119 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [ main ]  # Only deploy on main branch
+  workflow_run:
+    workflows: ["Lint", "Static Code Scan", "Build"]
+    types: [completed]
+    branches: [ main ]
+
+jobs:
+  deploy:
+    name: Deploy to Elastic Beanstalk
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+          
+      - name: Install dependencies
+        working-directory: ./app
+        run: npm ci
+        
+      - name: Create deployment package
+        working-directory: ./app
+        run: |
+          zip -r ../deployment-${{ github.sha }}.zip . \
+            -x "node_modules/*" \
+            -x "uploads/*" \
+            -x "*.log" \
+            -x "check-node22.js" \
+            -x "app-deployment.zip"
+            
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          
+      - name: Upload to S3
+        run: |
+          aws s3 cp deployment-${{ github.sha }}.zip \
+            s3://${{ secrets.S3_DEPLOYMENT_BUCKET }}/deployment-${{ github.sha }}.zip
+            
+      - name: Create Elastic Beanstalk application version
+        run: |
+          aws elasticbeanstalk create-application-version \
+            --application-name "${{ secrets.EB_APPLICATION_NAME }}" \
+            --version-label "github-${{ github.sha }}" \
+            --description "Deployed from GitHub Actions - ${{ github.event.head_commit.message }}" \
+            --source-bundle S3Bucket="${{ secrets.S3_DEPLOYMENT_BUCKET }}",S3Key="deployment-${{ github.sha }}.zip"
+            
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name "${{ secrets.EB_ENVIRONMENT_NAME }}" \
+            --version-label "github-${{ github.sha }}"
+            
+      - name: Wait for deployment
+        run: |
+          echo "Waiting for deployment to complete..."
+          timeout=600  # 10 minutes timeout
+          elapsed=0
+          
+          while [ $elapsed -lt $timeout ]; do
+            status=$(aws elasticbeanstalk describe-environments \
+              --environment-names "${{ secrets.EB_ENVIRONMENT_NAME }}" \
+              --query 'Environments[0].Status' \
+              --output text)
+              
+            health=$(aws elasticbeanstalk describe-environments \
+              --environment-names "${{ secrets.EB_ENVIRONMENT_NAME }}" \
+              --query 'Environments[0].Health' \
+              --output text)
+              
+            echo "Status: $status, Health: $health"
+            
+            if [ "$status" = "Ready" ]; then
+              echo "✅ Deployment completed successfully!"
+              break
+            elif [ "$status" = "Severe" ] || [ "$status" = "Terminated" ]; then
+              echo "❌ Deployment failed!"
+              exit 1
+            fi
+            
+            sleep 30
+            elapsed=$((elapsed + 30))
+          done
+          
+          if [ $elapsed -ge $timeout ]; then
+            echo "❌ Deployment timed out!"
+            exit 1
+          fi
+          
+      - name: Verify deployment
+        run: |
+          endpoint_url=$(aws elasticbeanstalk describe-environments \
+            --environment-names "${{ secrets.EB_ENVIRONMENT_NAME }}" \
+            --query 'Environments[0].CNAME' \
+            --output text)
+            
+          echo "🔗 Application URL: http://$endpoint_url"
+          echo "🧪 Testing health endpoint..."
+          
+          curl -f "http://$endpoint_url/health" || {
+            echo "❌ Health check failed!"
+            exit 1
+          }
+          
+          echo "✅ Deployment verification successful!"

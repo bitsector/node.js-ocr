@@ -1,0 +1,38 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+          
+      - name: Install dependencies
+        working-directory: ./app
+        run: npm ci
+        
+      # Placeholder for E2E tests
+      - name: E2E Tests (Placeholder)
+        run: |
+          echo "🧪 E2E test stage - placeholder"
+          echo "TODO: Add actual E2E tests here"
+          echo "Examples:"
+          echo "  - API endpoint tests"
+          echo "  - OCR functionality tests"
+          echo "  - Database integration tests"
+          echo "✅ E2E test stage completed (placeholder)"

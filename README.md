@@ -1,5 +1,9 @@
 # AWS Security Review Practice Environment
 
+[![CI/CD Pipeline](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/actions/workflows/ci-cd.yml)
+
+> **Note**: Replace `YOUR_USERNAME/YOUR_REPO_NAME` in the badge URL above with your actual GitHub repository path.
+
 This Terraform configuration creates a complete AWS infrastructure for practicing security reviews, featuring a modern Node.js 22 application stack.
 
 ## 🏗️ Architecture
