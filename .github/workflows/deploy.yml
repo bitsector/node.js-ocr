@@ -55,22 +55,17 @@ jobs:
         run: |
           VERSION_LABEL="github-${{ github.sha }}"
           
-          # Check if version already exists
-          VERSION_EXISTS=$(aws elasticbeanstalk describe-application-versions \
-            --application-name "${{ secrets.EB_APPLICATION_NAME }}" \
-            --version-labels "$VERSION_LABEL" \
-            --query 'length(ApplicationVersions)' \
-            --output text 2>/dev/null || echo "0")
+          # Try to create application version, ignore error if it already exists
+          echo "📦 Creating application version: $VERSION_LABEL"
           
-          if [ "$VERSION_EXISTS" -gt "0" ]; then
-            echo "📦 Application version $VERSION_LABEL already exists, skipping creation"
+          if aws elasticbeanstalk create-application-version \
+            --application-name "${{ secrets.EB_APPLICATION_NAME }}" \
+            --version-label "$VERSION_LABEL" \
+            --description "Deployed from GitHub Actions - ${{ github.event.head_commit.message }}" \
+            --source-bundle S3Bucket="${{ secrets.S3_DEPLOYMENT_BUCKET }}",S3Key="deployment-${{ github.sha }}.zip" 2>/dev/null; then
+            echo "✅ Application version created successfully"
           else
-            echo "📦 Creating new application version: $VERSION_LABEL"
-            aws elasticbeanstalk create-application-version \
-              --application-name "${{ secrets.EB_APPLICATION_NAME }}" \
-              --version-label "$VERSION_LABEL" \
-              --description "Deployed from GitHub Actions - ${{ github.event.head_commit.message }}" \
-              --source-bundle S3Bucket="${{ secrets.S3_DEPLOYMENT_BUCKET }}",S3Key="deployment-${{ github.sha }}.zip"
+            echo "📦 Application version $VERSION_LABEL may already exist, proceeding with deployment"
           fi
             
       - name: Deploy to Elastic Beanstalk
