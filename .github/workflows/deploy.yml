@@ -53,17 +53,32 @@ jobs:
             
       - name: Create Elastic Beanstalk application version
         run: |
-          aws elasticbeanstalk create-application-version \
+          VERSION_LABEL="github-${{ github.sha }}"
+          
+          # Check if version already exists
+          if aws elasticbeanstalk describe-application-versions \
             --application-name "${{ secrets.EB_APPLICATION_NAME }}" \
-            --version-label "github-${{ github.sha }}" \
-            --description "Deployed from GitHub Actions - ${{ github.event.head_commit.message }}" \
-            --source-bundle S3Bucket="${{ secrets.S3_DEPLOYMENT_BUCKET }}",S3Key="deployment-${{ github.sha }}.zip"
+            --version-labels "$VERSION_LABEL" \
+            --query 'ApplicationVersions[0].VersionLabel' \
+            --output text 2>/dev/null | grep -q "$VERSION_LABEL"; then
+            echo "📦 Application version $VERSION_LABEL already exists, skipping creation"
+          else
+            echo "📦 Creating new application version: $VERSION_LABEL"
+            aws elasticbeanstalk create-application-version \
+              --application-name "${{ secrets.EB_APPLICATION_NAME }}" \
+              --version-label "$VERSION_LABEL" \
+              --description "Deployed from GitHub Actions - ${{ github.event.head_commit.message }}" \
+              --source-bundle S3Bucket="${{ secrets.S3_DEPLOYMENT_BUCKET }}",S3Key="deployment-${{ github.sha }}.zip"
+          fi
             
       - name: Deploy to Elastic Beanstalk
         run: |
+          VERSION_LABEL="github-${{ github.sha }}"
+          echo "🚀 Deploying version $VERSION_LABEL to environment ${{ secrets.EB_ENVIRONMENT_NAME }}"
+          
           aws elasticbeanstalk update-environment \
             --environment-name "${{ secrets.EB_ENVIRONMENT_NAME }}" \
-            --version-label "github-${{ github.sha }}"
+            --version-label "$VERSION_LABEL"
             
       - name: Wait for deployment
         run: |
