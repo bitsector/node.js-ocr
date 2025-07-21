@@ -1,0 +1,7 @@
+node_modules/
+uploads/
+*.log
+*.zip
+eng.traineddata
+package-lock.json
+.git/
