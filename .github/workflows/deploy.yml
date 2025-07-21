@@ -68,6 +68,39 @@ jobs:
             echo "📦 Application version $VERSION_LABEL may already exist, proceeding with deployment"
           fi
             
+      - name: Check environment status before deployment
+        run: |
+          echo "🔍 Checking environment status before deployment..."
+          VERSION_LABEL="github-${{ github.sha }}"
+          
+          # Wait for environment to be ready if it's currently updating
+          timeout=300  # 5 minutes timeout for initial check
+          elapsed=0
+          
+          while [ $elapsed -lt $timeout ]; do
+            status=$(aws elasticbeanstalk describe-environments \
+              --environment-names "${{ secrets.EB_ENVIRONMENT_NAME }}" \
+              --query 'Environments[0].Status' \
+              --output text)
+            
+            if [ "$status" = "Ready" ]; then
+              echo "✅ Environment is ready for deployment"
+              break
+            elif [ "$status" = "Updating" ]; then
+              echo "⏳ Environment is currently updating (${elapsed}s elapsed)..."
+              sleep 30
+              elapsed=$((elapsed + 30))
+            else
+              echo "❌ Environment is in unexpected status: $status"
+              exit 1
+            fi
+          done
+          
+          if [ $elapsed -ge $timeout ]; then
+            echo "❌ Timeout waiting for environment to be ready"
+            exit 1
+          fi
+            
       - name: Deploy to Elastic Beanstalk
         run: |
           VERSION_LABEL="github-${{ github.sha }}"
