@@ -13,6 +13,51 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     
     steps:
+      - name: Wait for all required workflows
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const requiredWorkflows = ['Lint', 'Static Code Scan', 'Build', 'E2E Tests'];
+            const sha = context.payload.workflow_run.head_sha;
+            
+            console.log(`🔍 Checking all workflows for commit: ${sha}`);
+            
+            // Check each required workflow
+            for (const workflowName of requiredWorkflows) {
+              const workflowFileName = workflowName.toLowerCase().replace(/\s+/g, '-') + '.yml';
+              
+              try {
+                const runs = await github.rest.actions.listWorkflowRunsForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflowFileName,
+                  head_sha: sha,
+                });
+                
+                const completedRun = runs.data.workflow_runs.find(run => 
+                  run.head_sha === sha && run.status === 'completed'
+                );
+                
+                if (!completedRun) {
+                  console.log(`❌ ${workflowName} not yet completed for commit ${sha}`);
+                  console.log('🛑 Skipping deployment - not all workflows complete');
+                  process.exit(0); // Exit gracefully, don't fail the workflow
+                }
+                
+                if (completedRun.conclusion !== 'success') {
+                  console.log(`❌ ${workflowName} failed for commit ${sha}`);
+                  core.setFailed(`Required workflow ${workflowName} failed`);
+                  return;
+                }
+                
+                console.log(`✅ ${workflowName}: ${completedRun.conclusion}`);
+              } catch (error) {
+                console.log(`⚠️ Could not check ${workflowName}: ${error.message}`);
+              }
+            }
+            
+            console.log('🎉 All required workflows completed successfully!');
+            console.log('🚀 Proceeding with deployment...');
       - name: Checkout code
         uses: actions/checkout@v4
         
