@@ -8,6 +8,8 @@
         "elasticbeanstalk:UpdateEnvironment", 
         "elasticbeanstalk:DescribeEnvironments",
         "elasticbeanstalk:DescribeApplicationVersions",
+        "elasticbeanstalk:DescribeEvents",
+        "elasticbeanstalk:DescribeEnvironmentHealth",
         "s3:CreateBucket",
         "s3:PutObject",
         "s3:GetObject",
@@ -16,7 +18,12 @@
         "s3:GetBucketPolicy",
         "s3:PutBucketPolicy",
         "s3:PutBucketAcl",
-        "s3:GetBucketAcl"
+        "s3:GetBucketAcl",
+        "cloudformation:GetTemplate",
+        "cloudformation:DescribeStacks",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStackResources",
+        "cloudformation:ListStackResources"
       ],
       "Resource": "*"
     }
