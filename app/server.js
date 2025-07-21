@@ -5,6 +5,8 @@ const cors = require('cors');
 const path = require('path');
 const { promises: fs } = require('fs');
 const mysql = require('mysql2/promise');
+const crypto = require('crypto');
+const redis = require('redis');
 
 const app = express();
 
@@ -26,6 +28,18 @@ const dbConfig = {
 
 // Database connection pool
 let dbPool = null;
+
+// Redis configuration
+const redisConfig = {
+  host: process.env.REDIS_HOST || 'localhost',
+  port: process.env.REDIS_PORT || 6379,
+  retryDelayOnFailover: 100,
+  maxRetriesPerRequest: 3
+};
+
+// Redis client
+let redisClient = null;
+let redisAvailable = false;
 
 // Initialize database connection and create table if needed
 async function initializeDatabase() {
@@ -50,13 +64,29 @@ async function initializeDatabase() {
         file_size INT,
         mime_type VARCHAR(100),
         processing_time_ms FLOAT,
+        cache_hit BOOLEAN DEFAULT FALSE,
         INDEX idx_created_at (created_at),
-        INDEX idx_image_name (image_name)
+        INDEX idx_image_name (image_name),
+        INDEX idx_cache_hit (cache_hit)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `;
     
     await connection.execute(createTableQuery);
-    console.log('✅ OCR logs table created/verified');
+    console.log('✅ OCR logs table created/verified with cache tracking');
+    
+    // Add cache_hit column if it doesn't exist (for existing tables)
+    try {
+      await connection.execute(`
+        ALTER TABLE ocr_logs 
+        ADD COLUMN cache_hit BOOLEAN DEFAULT FALSE
+      `);
+      console.log('✅ Added cache_hit column to existing table');
+    } catch (alterError) {
+      // Column probably already exists, ignore error
+      if (!alterError.message.includes('Duplicate column')) {
+        console.log('ℹ️ Cache column already exists or alter failed:', alterError.message);
+      }
+    }
     
     connection.release();
   } catch (error) {
@@ -75,7 +105,7 @@ async function initializeDatabase() {
 }
 
 // Function to log OCR request to database
-async function logOCRRequest(imageName, extractedText, fileSize, mimeType, processingTime) {
+async function logOCRRequest(imageName, extractedText, fileSize, mimeType, processingTime, cacheHit = false) {
   if (!dbPool) {
     console.warn('⚠️ No database connection - skipping log');
     return;
@@ -83,8 +113,8 @@ async function logOCRRequest(imageName, extractedText, fileSize, mimeType, proce
 
   try {
     const query = `
-      INSERT INTO ocr_logs (image_name, extracted_text, file_size, mime_type, processing_time_ms)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO ocr_logs (image_name, extracted_text, file_size, mime_type, processing_time_ms, cache_hit)
+      VALUES (?, ?, ?, ?, ?, ?)
     `;
     
     await dbPool.execute(query, [
@@ -92,17 +122,20 @@ async function logOCRRequest(imageName, extractedText, fileSize, mimeType, proce
       extractedText,
       fileSize,
       mimeType,
-      processingTime
+      processingTime,
+      cacheHit
     ]);
     
-    console.log(`📝 OCR request logged: ${imageName}`);
+    const cacheStatus = cacheHit ? '(from cache)' : '(processed)';
+    console.log(`📝 OCR request logged: ${imageName} ${cacheStatus}`);
   } catch (error) {
     console.error('❌ Failed to log OCR request:', error.message);
   }
 }
 
-// Initialize database on startup
+// Initialize database and Redis on startup
 initializeDatabase();
+initializeRedis();
 
 // Middleware
 app.use(cors());
@@ -207,22 +240,63 @@ app.post('/ocr', upload.single('image'), async (req, res) => {
 
     console.log(`Processing OCR for file: ${req.file.originalname} (${req.file.mimetype})`);
     
-    // Perform OCR using Tesseract.js
-    const { data: { text } } = await Tesseract.recognize(
-      req.file.path,
-      'eng',
-      {
-        logger: m => {
-          // Only log progress, not all the verbose messages
-          if (m.status && (m.status.includes('recognizing') || m.status.includes('loading'))) {
-            console.log(`${req.file.originalname}: ${m.status} - ${Math.round(m.progress * 100)}%`);
+    // Generate hash of file contents for cache key
+    const fileBuffer = await fs.readFile(req.file.path);
+    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const cacheKey = `ocr:${fileHash}`;
+    
+    let extractedText = null;
+    let cacheHit = false;
+    
+    // Try to get from Redis cache first (if available)
+    if (redisAvailable && redisClient) {
+      try {
+        const cachedResult = await redisClient.get(cacheKey);
+        if (cachedResult) {
+          extractedText = cachedResult;
+          cacheHit = true;
+          console.log(`✅ Cache HIT for ${req.file.originalname} (hash: ${fileHash.substring(0, 12)}...)`);
+        } else {
+          console.log(`❌ Cache MISS for ${req.file.originalname} (hash: ${fileHash.substring(0, 12)}...)`);
+        }
+      } catch (redisError) {
+        console.log(`⚠️ Redis error (continuing without cache): ${redisError.message}`);
+        redisAvailable = false;
+      }
+    } else {
+      console.log(`⚠️ Redis not available - processing without cache for ${req.file.originalname}`);
+    }
+    
+    // If not in cache, perform OCR
+    if (!extractedText) {
+      const { data: { text } } = await Tesseract.recognize(
+        req.file.path,
+        'eng',
+        {
+          logger: m => {
+            // Only log progress, not all the verbose messages
+            if (m.status && (m.status.includes('recognizing') || m.status.includes('loading'))) {
+              console.log(`${req.file.originalname}: ${m.status} - ${Math.round(m.progress * 100)}%`);
+            }
           }
         }
+      );
+      
+      extractedText = text.trim();
+      
+      // Store result in Redis cache (if available)
+      if (redisAvailable && redisClient) {
+        try {
+          // Cache for 1 hour (3600 seconds)
+          await redisClient.setEx(cacheKey, 3600, extractedText);
+          console.log(`💾 Cached OCR result for ${req.file.originalname} (hash: ${fileHash.substring(0, 12)}...)`);
+        } catch (redisError) {
+          console.log(`⚠️ Failed to cache result: ${redisError.message}`);
+        }
       }
-    );
+    }
 
     const processingTime = performance.now() - startTime;
-    const extractedText = text.trim();
 
     // Log OCR request to database
     await logOCRRequest(
@@ -230,7 +304,8 @@ app.post('/ocr', upload.single('image'), async (req, res) => {
       extractedText,
       req.file.size,
       req.file.mimetype,
-      processingTime
+      processingTime,
+      cacheHit
     );
 
     // Clean up the uploaded file using promises
@@ -246,7 +321,10 @@ app.post('/ocr', upload.single('image'), async (req, res) => {
       nodeVersion: process.version,
       processingTimeMs: Math.round(processingTime),
       fileSize: req.file.size,
-      mimeType: req.file.mimetype
+      mimeType: req.file.mimetype,
+      cached: cacheHit,
+      fileHash: fileHash.substring(0, 12) + '...',
+      redisAvailable
     });
 
   } catch (error) {
@@ -275,15 +353,28 @@ app.post('/ocr', upload.single('image'), async (req, res) => {
 // API info endpoint
 app.get('/api', (req, res) => {
   res.json({
-    name: 'AWS Beanstalk OCR API',
+    name: 'AWS Beanstalk OCR API with Redis Caching',
     version: '2.0.0',
     nodeVersion: process.version,
     endpoints: {
       'GET /': 'API status and info',
       'GET /health': 'Health check',
       'GET /api': 'API documentation',
-      'POST /ocr': 'Upload image for OCR processing (multipart/form-data with "image" field)',
-      'GET /logs': 'View recent OCR processing logs'
+      'POST /ocr': 'Upload image for OCR processing (multipart/form-data with "image" field) - Results cached in Redis',
+      'GET /logs': 'View recent OCR processing logs with cache statistics',
+      'GET /cache/stats': 'View Redis cache statistics',
+      'DELETE /cache': 'Clear Redis cache (for testing)'
+    },
+    features: {
+      redis_caching: {
+        enabled: redisAvailable,
+        description: 'OCR results are cached by file hash for 1 hour',
+        cache_key_format: 'ocr:{sha256_hash}'
+      },
+      graceful_degradation: {
+        description: 'App works normally even when Redis is unavailable',
+        fallback: 'OCR processing without caching'
+      }
     },
     usage: {
       ocr: {
@@ -291,13 +382,19 @@ app.get('/api', (req, res) => {
         url: '/ocr',
         contentType: 'multipart/form-data',
         body: 'image file in "image" field',
-        supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp']
+        supportedFormats: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'],
+        caching: 'Results cached by file content hash'
       }
     },
     database: {
       connected: dbPool !== null,
       host: process.env.DB_HOST || 'localhost',
       database: process.env.DB_NAME || 'securityreviewdb'
+    },
+    redis: {
+      available: redisAvailable,
+      host: process.env.REDIS_HOST || 'localhost',
+      port: process.env.REDIS_PORT || 6379
     }
   });
 });
@@ -314,7 +411,7 @@ app.get('/logs', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 10, 50); // Default 10, max 50
     
-    // Simple query without parameterization to avoid MySQL issues
+    // Updated query to include cache_hit information
     const query = `
       SELECT 
         id,
@@ -324,7 +421,8 @@ app.get('/logs', async (req, res) => {
         created_at,
         file_size,
         mime_type,
-        processing_time_ms
+        processing_time_ms,
+        cache_hit
       FROM ocr_logs 
       ORDER BY created_at DESC 
       LIMIT ${limit}
@@ -332,14 +430,24 @@ app.get('/logs', async (req, res) => {
     
     const [rows] = await dbPool.execute(query);
     
-    // Get total count with a simple query
-    const [countResult] = await dbPool.execute('SELECT COUNT(*) as total FROM ocr_logs');
-    const total = countResult[0].total;
+    // Get cache statistics
+    const [cacheStats] = await dbPool.execute(`
+      SELECT 
+        COUNT(*) as total_requests,
+        SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END) as cache_hits,
+        SUM(CASE WHEN cache_hit = 0 THEN 1 ELSE 0 END) as cache_misses,
+        ROUND(
+          (SUM(CASE WHEN cache_hit = 1 THEN 1 ELSE 0 END) / COUNT(*)) * 100, 2
+        ) as cache_hit_rate_percent,
+        AVG(CASE WHEN cache_hit = 0 THEN processing_time_ms END) as avg_processing_time_no_cache,
+        AVG(CASE WHEN cache_hit = 1 THEN processing_time_ms END) as avg_processing_time_cached
+      FROM ocr_logs
+    `);
     
     res.json({
       success: true,
       data: rows,
-      total,
+      cacheStats: cacheStats[0],
       limit,
       timestamp: new Date().toISOString()
     });
@@ -348,6 +456,59 @@ app.get('/logs', async (req, res) => {
     console.error('Failed to fetch OCR logs:', error);
     res.status(500).json({
       error: 'Failed to fetch logs',
+      message: error.message
+    });
+  }
+});
+
+// Cache management endpoint
+app.get('/cache/stats', async (req, res) => {
+  if (!redisAvailable || !redisClient) {
+    return res.json({
+      redisAvailable: false,
+      message: 'Redis is not available'
+    });
+  }
+
+  try {
+    const info = await redisClient.info('memory');
+    const keyCount = await redisClient.dbSize();
+    
+    res.json({
+      redisAvailable: true,
+      keyCount,
+      memoryInfo: info,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get cache stats',
+      message: error.message,
+      redisAvailable: false
+    });
+  }
+});
+
+// Clear cache endpoint (for testing)
+app.delete('/cache', async (req, res) => {
+  if (!redisAvailable || !redisClient) {
+    return res.json({
+      success: false,
+      message: 'Redis is not available'
+    });
+  }
+
+  try {
+    await redisClient.flushDb();
+    res.json({
+      success: true,
+      message: 'Cache cleared successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to clear cache',
       message: error.message
     });
   }
@@ -439,5 +600,44 @@ process.on('SIGINT', async () => {
     process.exit(0);
   });
 });
+
+// Initialize Redis connection
+async function initializeRedis() {
+  try {
+    console.log('🔗 Connecting to Redis...');
+    console.log(`📍 Host: ${redisConfig.host}:${redisConfig.port}`);
+    
+    redisClient = redis.createClient(redisConfig);
+    
+    redisClient.on('error', (err) => {
+      console.log('❌ Redis Client Error:', err.message);
+      redisAvailable = false;
+    });
+
+    redisClient.on('connect', () => {
+      console.log('✅ Redis connection established');
+      redisAvailable = true;
+    });
+
+    redisClient.on('ready', () => {
+      console.log('🚀 Redis client ready');
+      redisAvailable = true;
+    });
+
+    redisClient.on('end', () => {
+      console.log('🔌 Redis connection closed');
+      redisAvailable = false;
+    });
+
+    await redisClient.connect();
+    
+  } catch (error) {
+    console.log('⚠️ Redis connection failed - OCR will work without caching:', error.message);
+    redisAvailable = false;
+  }
+}
+
+// Initialize Redis on startup
+initializeRedis();
 
 module.exports = app;
