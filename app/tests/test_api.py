@@ -27,7 +27,9 @@ def test_ocr_file(filename):
     filepath = os.path.join(SAMPLE_DIR, filename)
     words = os.path.splitext(filename)[0].lower().split('_')
     
-    print(f"\n=== Testing {filename} ===")
+    print(f"\n{'='*50}")
+    print(f"TESTING FILE: {filename}")
+    print(f"{'='*50}")
     print(f"Expected words: {words}")
     print(f"File path: {filepath}")
     
@@ -53,3 +55,7 @@ def test_ocr_file(filename):
     for word in words:
         print(f"Looking for '{word}' in '{extracted_text}'")
         assert word in extracted_text, f"Word '{word}' not found in OCR result for {filename}. Expected words: {words}, Got text: '{extracted_text}'"
+    
+    print(f"{'='*50}")
+    print(f"COMPLETED: {filename} - ALL WORDS FOUND!")
+    print(f"{'='*50}\n")
