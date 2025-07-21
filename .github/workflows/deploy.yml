@@ -56,11 +56,13 @@ jobs:
           VERSION_LABEL="github-${{ github.sha }}"
           
           # Check if version already exists
-          if aws elasticbeanstalk describe-application-versions \
+          VERSION_EXISTS=$(aws elasticbeanstalk describe-application-versions \
             --application-name "${{ secrets.EB_APPLICATION_NAME }}" \
             --version-labels "$VERSION_LABEL" \
-            --query 'ApplicationVersions[0].VersionLabel' \
-            --output text 2>/dev/null | grep -q "$VERSION_LABEL"; then
+            --query 'length(ApplicationVersions)' \
+            --output text 2>/dev/null || echo "0")
+          
+          if [ "$VERSION_EXISTS" -gt "0" ]; then
             echo "📦 Application version $VERSION_LABEL already exists, skipping creation"
           else
             echo "📦 Creating new application version: $VERSION_LABEL"
