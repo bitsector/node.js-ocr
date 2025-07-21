@@ -2,6 +2,8 @@ node_modules/
 uploads/
 *.log
 *.zip
+*.json
 eng.traineddata
 package-lock.json
 .git/
+tests/

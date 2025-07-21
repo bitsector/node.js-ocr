@@ -354,7 +354,7 @@ app.get('/logs', async (req, res) => {
 });
 
 // Error handling middleware
-app.use((error, req, res, next) => {
+app.use((error, req, res, _next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
@@ -382,15 +382,15 @@ app.use('*', (req, res) => {
 
 // Start server
 const server = app.listen(port, () => {
-  console.log(`🚀 OCR API Server running on port ${port}`);
-  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔧 Node.js version: ${process.version}`);
-  console.log(`⏰ Started at: ${new Date().toISOString()}`);
-  console.log(`🔗 Available endpoints:`);
-  console.log(`   GET  / - API info`);
-  console.log(`   GET  /health - Health check`);
-  console.log(`   GET  /api - API documentation`);
-  console.log(`   POST /ocr - OCR processing`);
+  console.log('🚀 OCR API Server running on port ' + port);
+  console.log('📍 Environment: ' + (process.env.NODE_ENV || 'development'));
+  console.log('🔧 Node.js version: ' + process.version);
+  console.log('⏰ Started at: ' + new Date().toISOString());
+  console.log('🔗 Available endpoints:');
+  console.log('   GET  / - API info');
+  console.log('   GET  /health - Health check');
+  console.log('   GET  /api - API documentation');
+  console.log('   POST /ocr - OCR processing');
 });
 
 // Graceful shutdown handling (Node.js best practices)
