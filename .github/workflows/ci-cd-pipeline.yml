@@ -66,15 +66,144 @@ jobs:
             -x "app-deployment.zip"
           echo "✅ Build stage completed"
           
-      # STAGE 4: E2E TESTS (Placeholder)
-      - name: 🧪 E2E Tests Stage
-        run: |
-          echo "🧪 E2E test stage - placeholder (passes trivially)"
-          echo "✅ All E2E tests passed"
+      # STAGE 4: E2E TESTS (Real Implementation)
+      - name: 🧪 Setup Python for E2E Tests
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
           
-      # STAGE 5: DEPLOY (Only on main branch)
+      - name: 🧪 Install Python Test Dependencies
+        run: |
+          echo "🧪 Installing Python test environment..."
+          python -m pip install --upgrade pip
+          pip install -r app/tests/requirements.txt
+          echo "✅ Python dependencies installed"
+          
+      - name: 🧪 Start Node.js Server for E2E Tests
+        working-directory: ./app
+        run: |
+          echo "🧪 Starting Node.js server for E2E testing..."
+          set -e  # Exit immediately if any command fails
+          
+          # Ensure no conflicting processes
+          pkill -f "node.*server.js" || true
+          sleep 1
+          
+          # Start server in background with logging
+          echo "🚀 Starting server..."
+          node server.js > server.log 2>&1 &
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          echo "📝 Server started with PID: $SERVER_PID"
+          
+          # Wait for server to be ready with better error reporting
+          echo "⏳ Waiting for server to start..."
+          for i in {1..30}; do
+            if curl -s -f http://localhost:8080/health > /dev/null 2>&1; then
+              echo "✅ Server is ready on port 8080"
+              echo "🔍 Server health check passed"
+              curl -s http://localhost:8080/health
+              break
+            fi
+            
+            if [ $i -eq 30 ]; then
+              echo "❌ Server failed to start within 30 seconds"
+              echo "📝 Server logs:"
+              cat server.log || echo "No server logs available"
+              echo "🔍 Process check:"
+              ps aux | grep node || true
+              kill $SERVER_PID || true
+              exit 1
+            fi
+            
+            echo "⏳ Attempt $i/30 - waiting for server..."
+            sleep 1
+          done
+        
+      - name: 🧪 Validate E2E Test Environment
+        run: |
+          echo "🔍 Validating E2E test environment..."
+          
+          # Check that sample files exist for testing
+          if [ ! -d "sample_files" ] || [ -z "$(ls sample_files/*.{jpg,jpeg,png,webp} 2>/dev/null)" ]; then
+            echo "❌ No sample files found for OCR testing"
+            ls -la sample_files/ || echo "sample_files directory not found"
+            exit 1
+          fi
+          
+          # Check that test files exist
+          if [ ! -f "app/tests/test_api.py" ]; then
+            echo "❌ Test file not found: app/tests/test_api.py"
+            exit 1
+          fi
+          
+          # Check that server file exists
+          if [ ! -f "app/server.js" ]; then
+            echo "❌ Server file not found: app/server.js"
+            exit 1
+          fi
+          
+          # Check that eng.traineddata exists
+          if [ ! -f "app/eng.traineddata" ]; then
+            echo "❌ OCR language data not found: app/eng.traineddata"
+            exit 1
+          fi
+          
+          echo "✅ E2E test environment validation passed"
+          echo "📊 Sample files available:"
+          ls -la sample_files/
+          
+      - name: 🧪 Run E2E Tests
+        working-directory: ./app/tests
+        run: |
+          echo "🧪 Running E2E pytest tests..."
+          set -e  # Exit immediately if any command fails
+          
+          # Run tests with verbose output and fail fast
+          python -m pytest test_api.py -v -s --tb=short --maxfail=1
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ All E2E tests passed successfully"
+          else
+            echo "❌ E2E tests failed - stopping pipeline"
+            exit 1
+          fi
+          
+      - name: 🧪 Cleanup E2E Test Environment
+        if: always()
+        working-directory: ./app
+        run: |
+          echo "🧹 Cleaning up E2E test environment..."
+          
+          # Show server logs if they exist (helpful for debugging)
+          if [ -f server.log ]; then
+            echo "📝 Server logs during E2E tests:"
+            tail -50 server.log || true
+          fi
+          
+          # Kill the Node.js server
+          if [ ! -z "$SERVER_PID" ]; then
+            echo "🔪 Stopping Node.js server (PID: $SERVER_PID)"
+            kill $SERVER_PID || true
+            sleep 2
+            kill -9 $SERVER_PID 2>/dev/null || true
+          else
+            # Fallback: kill any node processes running server.js
+            echo "🔍 Fallback: killing any remaining node processes..."
+            pkill -f "node.*server.js" || true
+          fi
+          
+          # Clean up any test artifacts
+          echo "🧹 Cleaning up test artifacts..."
+          rm -rf uploads/* 2>/dev/null || true
+          rm -f *.log 2>/dev/null || true
+          rm -f tests/*.log 2>/dev/null || true
+          
+          echo "✅ E2E cleanup completed"
+          
+      # STAGE 5: DEPLOY (Only on main branch and if all tests pass)
       - name: 🚀 Deploy to AWS
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && success()
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
