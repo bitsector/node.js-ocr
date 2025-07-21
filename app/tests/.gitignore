@@ -1,0 +1,43 @@
+# Python bytecode and test cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Coverage and test reports
+.coverage
+htmlcov/
+test-reports/
+*.xml
+*.html
+
+# tox and mypy
+.tox/
+.cache
+.mypy_cache/
+
+# Virtual environments
+venv/
+env/
+.env
+
+# IDE/editor files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+AppleDouble
+LSOverride
+Icon?
+._*
+Spotlight-V100
+Trashes
+ehthumbs.db
+Desktop.ini

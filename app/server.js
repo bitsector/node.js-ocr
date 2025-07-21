@@ -207,11 +207,13 @@ app.post('/ocr', upload.single('image'), async (req, res) => {
 
     console.log(`Processing OCR for file: ${req.file.originalname} (${req.file.mimetype})`);
     
-    // Perform OCR using Tesseract.js
+    // Perform OCR using Tesseract.js with local traineddata
     const { data: { text } } = await Tesseract.recognize(
       req.file.path,
       'eng',
       {
+        langPath: path.join(__dirname),  // Use local eng.traineddata file
+        gzip: false,  // Don't expect compressed files
         logger: m => {
           // Only log progress, not all the verbose messages
           if (m.status && (m.status.includes('recognizing') || m.status.includes('loading'))) {
