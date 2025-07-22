@@ -2,6 +2,7 @@ const Tesseract = require('tesseract.js');
 const path = require('path');
 const { promises: fs } = require('fs');
 const { write_ocr } = require('../db/database');
+const { get_from_cache, store_in_cache } = require('../cache/cache');
 
 /**
  * OCR Service - handles OCR processing and related business logic
@@ -14,6 +15,30 @@ async function ocr(file) {
   try {
     console.log(`Processing OCR for file: ${file.originalname} (${file.mimetype})`);
     
+    // Check cache first
+    const cachedResult = await get_from_cache(file.path, file.originalname);
+    if (cachedResult) {
+      // Cache hit! Clean up file and return cached result
+      await fs.unlink(file.path).catch(err => 
+        console.error('File cleanup error:', err)
+      );
+      
+      const totalTime = performance.now() - startTime;
+      console.log(`⚡ Total time with cache: ${totalTime.toFixed(2)}ms`);
+      
+      // Return cached result with updated timestamps and file info
+      return {
+        ...cachedResult,
+        timestamp: new Date().toISOString(),
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        processingTimeMs: Math.round(totalTime) // Very fast due to cache
+      };
+    }
+    
+    // Cache miss - proceed with OCR processing
+    console.log(`🔄 Cache miss - proceeding with OCR processing`);
+    
     // Start timing the OCR operation specifically
     const ocrStartTime = performance.now();
     console.log(`🔍 Starting Tesseract OCR processing for ${file.originalname}...`);
@@ -23,8 +48,11 @@ async function ocr(file) {
       file.path,
       'eng',
       {
-        langPath: path.join(__dirname, '..'),  // Use local eng.traineddata file
+        langPath: path.join(__dirname, '..'),  // Points to ./app directory
         gzip: false,  // Don't expect compressed files
+        cachePath: path.join(__dirname, '..'), // Cache in same directory as langPath
+        corePath: null, // Don't download core files
+        workerPath: null, // Don't download worker files  
         logger: m => {
           // Only log progress, not all the verbose messages
           if (m.status && (m.status.includes('recognizing') || m.status.includes('loading'))) {
@@ -47,6 +75,22 @@ async function ocr(file) {
     console.log(`   ⏱️ Pure OCR time: ${ocrProcessingTime.toFixed(2)}ms`);
     console.log(`   ⏱️ Total processing time: ${totalProcessingTime.toFixed(2)}ms`);
 
+    // Create OCR result object
+    const ocrResult = {
+      success: true,
+      filename: file.originalname,
+      extractedText,
+      timestamp: new Date().toISOString(),
+      nodeVersion: process.version,
+      processingTimeMs: Math.round(totalProcessingTime),
+      ocrTimeMs: Math.round(ocrProcessingTime),  // Pure OCR time
+      fileSize: file.size,
+      mimeType: file.mimetype
+    };
+
+    // Store in cache for future requests (before file cleanup)
+    await store_in_cache(file.path, file.originalname, ocrResult);
+
     // Log OCR request to database (async operation)
     await write_ocr(
       file.originalname,
@@ -62,17 +106,7 @@ async function ocr(file) {
     );
 
     // Return OCR processing result with detailed timing
-    return {
-      success: true,
-      filename: file.originalname,
-      extractedText,
-      timestamp: new Date().toISOString(),
-      nodeVersion: process.version,
-      processingTimeMs: Math.round(totalProcessingTime),
-      ocrTimeMs: Math.round(ocrProcessingTime),  // New: Pure OCR time
-      fileSize: file.size,
-      mimeType: file.mimetype
-    };
+    return ocrResult;
 
   } catch (error) {
     console.error(`OCR Error for ${file?.originalname || 'unknown file'}:`, error.message);

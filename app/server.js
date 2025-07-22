@@ -3,6 +3,7 @@ const multer = require('multer');
 const cors = require('cors');
 const path = require('path');
 const { initializeDatabase, getDatabaseInfo, closeDatabasePool } = require('./db/database');
+const { init: initCache, getCacheStatus, closeCache } = require('./cache/cache');
 const { ocrHandler } = require('./api/ocrApi');
 const { logsHandler } = require('./api/logsApi');
 
@@ -11,8 +12,9 @@ const app = express();
 // IMPORTANT: Use process.env.PORT for Elastic Beanstalk
 const port = process.env.PORT || 8080;
 
-// Initialize database on startup
+// Initialize database and cache on startup
 initializeDatabase();
+initCache();
 
 // Middleware
 app.use(cors());
@@ -69,7 +71,9 @@ const upload = multer({
 });
 
 // Health check endpoint for Beanstalk
-app.get('/', (req, res) => {
+app.get('/', async (req, res) => {
+  const cacheStatus = await getCacheStatus();
+  
   res.json({
     message: 'AWS Beanstalk OCR API is running!',
     version: '2.0.0',
@@ -78,6 +82,12 @@ app.get('/', (req, res) => {
     environment: process.env.NODE_ENV || 'development',
     testPage: '/static/index.html',
     database: getDatabaseInfo(),
+    cache: {
+      enabled: cacheStatus.enabled,
+      backend: cacheStatus.backend || 'none',
+      connected: cacheStatus.connected,
+      info: cacheStatus.info
+    },
     endpoints: {
       'GET /': 'API status',
       'GET /health': 'Health check',
@@ -152,6 +162,13 @@ const server = app.listen(port, () => {
 process.on('SIGTERM', async () => {
   console.log('🛑 SIGTERM received, shutting down gracefully');
   
+  // Close cache connection
+  try {
+    await closeCache();
+  } catch (err) {
+    console.error('❌ Error closing cache connection:', err);
+  }
+  
   // Close database pool using the db layer function
   try {
     await closeDatabasePool();
@@ -171,6 +188,13 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('🛑 SIGINT received, shutting down gracefully');
+  
+  // Close cache connection
+  try {
+    await closeCache();
+  } catch (err) {
+    console.error('❌ Error closing cache connection:', err);
+  }
   
   // Close database pool using the db layer function
   try {

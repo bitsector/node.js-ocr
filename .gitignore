@@ -18,6 +18,10 @@ Thumbs.db
 
 # Backup files
 *.backup
+
+# Tesseract language files (prevent auto-downloaded duplicates)
+# NOTE: We keep ./app/eng.traineddata in the repo intentionally
+/eng.traineddata
 *.bak
 
 # Deployment files
