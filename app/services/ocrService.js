@@ -14,6 +14,14 @@ async function ocr(file) {
   
   try {
     console.log(`Processing OCR for file: ${file.originalname} (${file.mimetype})`);
+    console.log('DEBUG - File object properties:', {
+      filename: file.filename,
+      originalname: file.originalname,
+      path: file.path,
+      destination: file.destination,
+      size: file.size,
+      mimetype: file.mimetype
+    });
     
     // Check cache first
     const cachedResult = await get_from_cache(file.path, file.originalname);
@@ -37,7 +45,7 @@ async function ocr(file) {
     }
     
     // Cache miss - proceed with OCR processing
-    console.log(`🔄 Cache miss - proceeding with OCR processing`);
+    console.log('🔄 Cache miss - proceeding with OCR processing');
     
     // Start timing the OCR operation specifically
     const ocrStartTime = performance.now();
@@ -51,8 +59,6 @@ async function ocr(file) {
         langPath: path.join(__dirname, '..'),  // Points to ./app directory
         gzip: false,  // Don't expect compressed files
         cachePath: path.join(__dirname, '..'), // Cache in same directory as langPath
-        corePath: null, // Don't download core files
-        workerPath: null, // Don't download worker files  
         logger: m => {
           // Only log progress, not all the verbose messages
           if (m.status && (m.status.includes('recognizing') || m.status.includes('loading'))) {

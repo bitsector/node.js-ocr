@@ -182,7 +182,7 @@ async function get_from_cache(filePath, originalName) {
       console.log(`📊 Cache backend: ${connectionType}`);
       console.log(`⏱️  Redis lookup time: ${redisLookupTime.toFixed(2)}ms`);
       console.log(`⏱️  Total cache time: ${totalCacheTime.toFixed(2)}ms`);
-      console.log(`✨ Saved OCR processing time for duplicate image`);
+      console.log('✨ Saved OCR processing time for duplicate image');
       
       // Add cache metadata to the result
       return {
@@ -199,7 +199,7 @@ async function get_from_cache(filePath, originalName) {
       console.log(`📊 Cache backend: ${connectionType}`);
       console.log(`⏱️  Redis lookup time: ${redisLookupTime.toFixed(2)}ms`);
       console.log(`⏱️  Total cache check time: ${totalCacheTime.toFixed(2)}ms`);
-      console.log(`🔄 Will process OCR and cache result`);
+      console.log('🔄 Will process OCR and cache result');
       return null;
     }
     
