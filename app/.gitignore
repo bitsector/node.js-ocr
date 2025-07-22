@@ -27,3 +27,18 @@ Thumbs.db
 # Elastic Beanstalk
 .elasticbeanstalk/
 *.zip
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+*.py,cover
+
+# Editor backups
+*~
+*.bak
+*.backup
+
+# Runtime logs
+server.log

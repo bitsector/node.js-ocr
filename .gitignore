@@ -19,6 +19,25 @@ Thumbs.db
 # Backup files
 *.backup
 
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+*.cover
+
+# Editor backups
+*~
+*.bak
+
 # Tesseract language files (prevent auto-downloaded duplicates)
 # NOTE: We keep ./app/eng.traineddata in the repo intentionally
 /eng.traineddata
