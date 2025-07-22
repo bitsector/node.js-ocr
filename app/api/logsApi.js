@@ -3,6 +3,14 @@ const { isDatabaseConnected } = require('../db/database');
 
 /**
  * Logs API Handler - handles logs endpoint HTTP requests
+ * 
+ * WARNING: This endpoint is for development/debugging only!
+ * In production, this endpoint should be:
+ * 1. Removed completely, OR
+ * 2. Protected with proper authentication/authorization
+ * 3. Rate-limited and IP-restricted
+ * Exposing logs publicly is a serious security risk!
+ * 
  * @param {object} req - Express request object
  * @param {object} res - Express response object
  */

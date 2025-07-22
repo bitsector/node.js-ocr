@@ -40,5 +40,6 @@ htmlcov/
 *.bak
 *.backup
 
-# Runtime logs
+# Runtime logs and log directory
+logs/
 server.log

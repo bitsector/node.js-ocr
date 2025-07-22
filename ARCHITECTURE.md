@@ -49,6 +49,21 @@ The application is now organized into 3 distinct layers with clear separation of
 - Database configuration and pooling
 - Connection health checks
 
+### 4. Utilities Layer (`/utils` directory)
+**Purpose**: Shared utilities, validation, logging, error handling
+
+**Files**:
+- `utils/logger.js` - Professional logging system
+- `utils/errors.js` - Custom error classes and error handling
+- `utils/fileValidation.js` - Comprehensive file validation
+
+**Responsibilities**:
+- Structured logging with multiple levels and outputs
+- Custom error classes for better error handling
+- File validation (MIME types, file size, security checks)
+- Request tracking and performance monitoring
+- Log rotation and management
+
 ## Function Flow
 
 ### OCR Endpoint (`POST /ocr`)
