@@ -2,6 +2,25 @@
 
 This file contains all the commands needed to run and test the OCR API locally.
 
+## 0. Setup Redis Cache (Optional but Recommended)
+
+### Start Local Redis Container:
+```bash
+# Start Redis container for caching
+docker run -d --name redis-demo -p 6379:6379 redis:latest
+
+# Verify Redis is running
+docker ps | grep redis
+```
+
+### Check Redis Connection:
+```bash
+# Test Redis connectivity
+redis-cli ping  # Should return PONG
+```
+
+**Note**: Without Redis, the OCR API will work but won't cache results, making duplicate image processing slower.
+
 ## 1. Start the Node.js OCR Service
 
 ### From the app directory:
@@ -18,6 +37,12 @@ npm start
 
 **Expected Output:**
 ```
+🔄 Initializing Redis cache connection...
+🏠 Attempting connection to local Redis container...
+📍 Local Redis: localhost:6379
+✅ Redis local ping successful
+✅ Successfully connected to local Redis container
+🎯 Cache system enabled with local backend
 🔗 Connecting to MySQL database...
 📍 Host: localhost
 📍 Database: securityreviewdb
@@ -30,8 +55,8 @@ npm start
 🔗 Available endpoints:
    GET  / - API info
    GET  /health - Health check
-   GET  /api - API documentation
    POST /ocr - OCR processing
+   GET  /logs - View logs
 ```
 
 ## 2. Run Python Tests (pytest)
@@ -184,7 +209,7 @@ mysql -u admin -p -h localhost -e "SHOW TABLES;" securityreviewdb
 
 ## 7. Expected Test Results
 
-### Successful OCR Response:
+### Successful OCR Response (Cache Miss):
 ```json
 {
   "success": true,
@@ -193,8 +218,28 @@ mysql -u admin -p -h localhost -e "SHOW TABLES;" securityreviewdb
   "timestamp": "2025-07-21T...",
   "nodeVersion": "v22.x.x",
   "processingTimeMs": 1234,
+  "ocrTimeMs": 1200,
   "fileSize": 5678,
   "mimeType": "image/jpeg"
+}
+```
+
+### Successful OCR Response (Cache Hit):
+```json
+{
+  "success": true,
+  "filename": "brain_buffering.jpeg",
+  "extractedText": "brain buffering",
+  "timestamp": "2025-07-21T...",
+  "nodeVersion": "v22.x.x",
+  "processingTimeMs": 45,
+  "fileSize": 5678,
+  "mimeType": "image/jpeg",
+  "fromCache": true,
+  "cacheBackend": "local",
+  "cacheHit": true,
+  "cacheLookupTimeMs": 12,
+  "totalCacheTimeMs": 26
 }
 ```
 

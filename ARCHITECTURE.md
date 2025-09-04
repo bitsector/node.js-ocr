@@ -49,7 +49,21 @@ The application is now organized into 3 distinct layers with clear separation of
 - Database configuration and pooling
 - Connection health checks
 
-### 4. Utilities Layer (`/utils` directory)
+### 4. Cache Layer (`/cache` directory)
+**Purpose**: Redis caching for OCR result optimization
+
+**Files**:
+- `cache/cache.js` - Redis cache implementation
+
+**Responsibilities**:
+- Redis connection management (AWS ElastiCache + local fallback)
+- File content hashing for cache keys (SHA-256)
+- `get_from_cache()` - Retrieve cached OCR results
+- `store_in_cache()` - Store OCR results with TTL
+- Cache status monitoring and health checks
+- Graceful degradation when Redis unavailable
+
+### 5. Utilities Layer (`/utils` directory)
 **Purpose**: Shared utilities, validation, logging, error handling
 
 **Files**:
@@ -68,9 +82,11 @@ The application is now organized into 3 distinct layers with clear separation of
 
 ### OCR Endpoint (`POST /ocr`)
 ```
-HTTP Request → ocrHandler (API) → ocr() (Service) → write_ocr() (DB)
-                    ↓                ↓                    ↓
-HTTP Response ← Error Handling ← File Processing ← Database Insert
+HTTP Request → ocrHandler (API) → ocr() (Service) → get_from_cache() (Cache)
+                    ↓                ↓                         ↓
+                                Cache Hit? ← Cache Miss → Tesseract OCR
+                                    ↓                         ↓
+HTTP Response ← Error Handling ← Return Cached ← store_in_cache() + write_ocr()
 ```
 
 ### Logs Endpoint (`GET /logs`)  

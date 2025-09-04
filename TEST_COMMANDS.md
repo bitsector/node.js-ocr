@@ -120,7 +120,10 @@ done
 ```
 
 ### Expected Response Format
+
 The server returns JSON with the `extractedText` field:
+
+**Cache Miss (first time processing):**
 ```json
 {
   "success": true,
@@ -129,9 +132,52 @@ The server returns JSON with the `extractedText` field:
   "timestamp": "2025-07-21T...",
   "nodeVersion": "v23.9.0",
   "processingTimeMs": 1234,
+  "ocrTimeMs": 1200,
   "fileSize": 5678,
   "mimeType": "image/webp"
 }
+```
+
+**Cache Hit (duplicate image):**
+```json
+{
+  "success": true,
+  "filename": "for_money.webp",
+  "extractedText": "FOR MONEY",
+  "timestamp": "2025-07-21T...",
+  "nodeVersion": "v23.9.0",
+  "processingTimeMs": 45,
+  "fileSize": 5678,
+  "mimeType": "image/webp",
+  "fromCache": true,
+  "cacheBackend": "local",
+  "cacheHit": true,
+  "cacheLookupTimeMs": 12,
+  "totalCacheTimeMs": 26
+}
+```
+
+## Testing Redis Cache
+
+### Test Cache Hit (Upload Same File Twice)
+```bash
+# First upload (cache miss - slow ~1200ms)
+curl -X POST http://localhost:8080/ocr \
+  -F "image=@/home/ak/playground/beanstalk/sample_files/for_money.webp"
+
+# Second upload immediately (cache hit - fast ~45ms) 
+curl -X POST http://localhost:8080/ocr \
+  -F "image=@/home/ak/playground/beanstalk/sample_files/for_money.webp"
+```
+
+### Check Cache Status
+```bash
+curl -X GET http://localhost:8080/ | jq '.cache'
+```
+
+### Start Local Redis for Testing
+```bash
+docker run -d --name redis-demo -p 6379:6379 redis:latest
 ```
 
 ## Troubleshooting
@@ -139,6 +185,8 @@ The server returns JSON with the `extractedText` field:
 1. **Connection Refused**: Make sure the Node.js server is running on port 8080
 2. **Empty extractedText**: Check if Tesseract.js is properly configured with local traineddata
 3. **File not found**: Ensure sample files exist in the correct path
+4. **Cache not working**: Check if Redis is running locally or AWS ElastiCache is configured
+5. **Slow responses**: Without cache, OCR takes ~1200ms; with cache hits, ~45ms
 
 ## Debug Individual File
 ```bash
